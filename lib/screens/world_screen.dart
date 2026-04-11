@@ -33,6 +33,16 @@ class WorldScreen extends StatelessWidget {
           }
           return;
         }
+        if (!pushProvider.canAddMore) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('You can only add up to 5 words in Home list.'),
+              ),
+            );
+          }
+          return;
+        }
         await pushProvider.addWord(word, intervalMinutes);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

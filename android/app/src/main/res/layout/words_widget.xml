@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@android:color/white"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Words to push"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:textColor="#E65A67"
+        android:paddingBottom="8dp" />
+
+    <TextView
+        android:id="@+id/widget_words"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="No words yet"
+        android:textSize="13sp"
+        android:textColor="#3B4957"
+        android:lineSpacingExtra="4dp" />
+
+</LinearLayout>

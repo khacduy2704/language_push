@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:home_widget/home_widget.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
@@ -10,6 +11,7 @@ import 'providers/word_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.instance.initialize();
+  HomeWidget.setAppGroupId('group.com.example.push_language');
   runApp(
     MultiProvider(
       providers: [

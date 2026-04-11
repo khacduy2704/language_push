@@ -3,13 +3,15 @@ import 'package:provider/provider.dart';
 
 import '../data/app_database.dart';
 import '../providers/push_provider.dart';
+import '../providers/settings_provider.dart';
 
 class PushListScreen extends StatelessWidget {
   const PushListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final List<Word> pushedWords = context.watch<PushProvider>().pushedWords;
+    final PushProvider pushProvider = context.watch<PushProvider>();
+    final List<Word> pushedWords = pushProvider.pushedWords;
 
     if (pushedWords.isEmpty) {
       return const Center(
@@ -31,15 +33,66 @@ class PushListScreen extends StatelessWidget {
             ? '${word.word} (${word.partOfSpeech})'
             : '${word.word} (${word.partOfSpeech}) ${word.meaning}';
 
-        return Container(
-          alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
-          child: Text(
-            itemLine,
-            style: const TextStyle(
-              fontSize: 33 / 2,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF3B4957),
+        return Dismissible(
+          key: ValueKey<int?>(word.id),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            color: const Color(0xFFFF3B30),
+            child: const Text(
+              'Delete',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          confirmDismiss: (_) async {
+            return showDialog<bool>(
+              context: context,
+              builder: (BuildContext dialogContext) => AlertDialog(
+                title: const Text('Delete'),
+                content: Text('Remove "${word.word}" from push list?'),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('No'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFFFF3B30),
+                    ),
+                    child: const Text('Yes'),
+                  ),
+                ],
+              ),
+            );
+          },
+          onDismissed: (_) async {
+            final int minutes =
+                context.read<SettingsProvider>().intervalMinutes;
+            await context.read<PushProvider>().removeWord(word, minutes);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content:
+                        Text('Removed "${word.word}" from push list.')),
+              );
+            }
+          },
+          child: Container(
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
+            child: Text(
+              itemLine,
+              style: const TextStyle(
+                fontSize: 33 / 2,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF3B4957),
+              ),
             ),
           ),
         );

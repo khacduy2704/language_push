@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:home_widget/home_widget.dart';
 
 import '../data/app_database.dart';
 import '../data/notification_service.dart';
@@ -6,6 +7,7 @@ import '../data/notification_service.dart';
 class PushProvider extends ChangeNotifier {
   final AppDatabase _db = AppDatabase.instance;
 
+  static const int maxPushedWords = 5;
   List<Word> pushedWords = <Word>[];
 
   PushProvider() {
@@ -16,15 +18,18 @@ class PushProvider extends ChangeNotifier {
     try {
       pushedWords = await _db.getPushedWords();
       notifyListeners();
+      _updateWidget();
     } catch (_) {}
   }
 
   bool isWordPushed(int? id) =>
       id != null && pushedWords.any((Word w) => w.id == id);
 
-  Future<void> addWord(Word word, int intervalMinutes) async {
-    if (isWordPushed(word.id)) {
-      return;
+  bool get canAddMore => pushedWords.length < maxPushedWords;
+
+  Future<bool> addWord(Word word, int intervalMinutes) async {
+    if (isWordPushed(word.id) || !canAddMore) {
+      return false;
     }
     if (word.id != null) {
       await _db.setWordPushed(word.id!, pushed: true);
@@ -32,6 +37,7 @@ class PushProvider extends ChangeNotifier {
     pushedWords = <Word>[...pushedWords, word];
     notifyListeners();
     _reschedule(intervalMinutes);
+    return true;
   }
 
   Future<void> removeWord(Word word, int intervalMinutes) async {
@@ -63,6 +69,22 @@ class PushProvider extends ChangeNotifier {
     NotificationService.instance.schedule(
       words: pushedWords,
       intervalMinutes: intervalMinutes,
+    );
+    _updateWidget();
+  }
+
+  void _updateWidget() {
+    final String text = pushedWords.isEmpty
+        ? 'No words yet'
+        : pushedWords.map((Word w) {
+            return w.meaning.isEmpty
+                ? '${w.word} (${w.partOfSpeech})'
+                : '${w.word} (${w.partOfSpeech}) ${w.meaning}';
+          }).join('\n');
+
+    HomeWidget.saveWidgetData<String>('pushed_words', text);
+    HomeWidget.updateWidget(
+      androidName: 'WordsWidgetProvider',
     );
   }
 }
