@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'dart:async' show Future;
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
@@ -40,6 +41,42 @@ class Word {
   String toString() => 'Word($id, $word, $partOfSpeech, $meaning, isPushed: $isPushed)';
 }
 
+class DictionaryEntry {
+  final int? id;
+  final String word;
+  final String ipa;
+  final String partOfSpeech;
+  final String meaning;
+
+  const DictionaryEntry({
+    this.id,
+    required this.word,
+    required this.ipa,
+    required this.partOfSpeech,
+    required this.meaning,
+  });
+
+  Map<String, Object?> toMap() => <String, Object?>{
+    'id': id,
+    'word': word,
+    'ipa': ipa,
+    'partOfSpeech': partOfSpeech,
+    'meaning': meaning,
+  };
+
+  factory DictionaryEntry.fromMap(Map<String, Object?> map) => DictionaryEntry(
+    id: map['id'] as int?,
+    word: map['word']! as String,
+    ipa: map['ipa']! as String,
+    partOfSpeech: map['partOfSpeech']! as String,
+    meaning: map['meaning']! as String,
+  );
+
+  @override
+  String toString() =>
+      'DictionaryEntry($id, $word, $ipa, $partOfSpeech, $meaning)';
+}
+
 class AppDatabase {
   AppDatabase._();
 
@@ -47,7 +84,8 @@ class AppDatabase {
 
   static const String _dbName = 'push_language.db';
   static const String _contactsTable = 'contacts';
-  static const int _dbVersion = 3;
+  static const String _dictionaryTable = 'dictionary';
+  static const int _dbVersion = 4;
 
   sqflite.Database? _database;
 
@@ -85,6 +123,16 @@ class AppDatabase {
             )
           ''');
 
+          await db.execute('''
+            CREATE TABLE $_dictionaryTable (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              word TEXT NOT NULL UNIQUE,
+              ipa TEXT NOT NULL DEFAULT '',
+              partOfSpeech TEXT NOT NULL DEFAULT '',
+              meaning TEXT NOT NULL DEFAULT ''
+            )
+          ''');
+
           await _seedWords(db);
         },
         onUpgrade: (sqflite.Database db, int oldVersion, int newVersion) async {
@@ -95,6 +143,17 @@ class AppDatabase {
             await db.execute(
               'ALTER TABLE $_contactsTable ADD COLUMN isPushed INTEGER NOT NULL DEFAULT 0',
             );
+          }
+          if (oldVersion < 4) {
+            await db.execute('''
+              CREATE TABLE $_dictionaryTable (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                word TEXT NOT NULL UNIQUE,
+                ipa TEXT NOT NULL DEFAULT '',
+                partOfSpeech TEXT NOT NULL DEFAULT '',
+                meaning TEXT NOT NULL DEFAULT ''
+              )
+            ''');
           }
         },
       ),
@@ -109,6 +168,10 @@ class AppDatabase {
         : await databaseFactoryFfi.getDatabasesPath();
 
     return join(databasesPath, _dbName);
+  }
+
+  Future<String> getDatabasePath() async {
+    return await _resolveDbPath();
   }
 
   Future<void> _seedWords(sqflite.Database db) async {
@@ -170,18 +233,55 @@ class AppDatabase {
     await db.execute('ALTER TABLE ${_contactsTable}_new RENAME TO $_contactsTable');
   }
 
-  Future<List<Word>> getWords({String query = ''}) async {
+  Future<List<Word>> getWords({String query = '', bool includePushed = true}) async {
     final sqflite.Database db = await database;
 
     final String normalizedQuery = query.trim();
-    final List<Map<String, Object?>> rows = await db.query(
-      _contactsTable,
-      where: normalizedQuery.isEmpty ? null : 'word LIKE ?',
-      whereArgs: normalizedQuery.isEmpty ? null : <String>['%$normalizedQuery%'],
-      orderBy: 'word COLLATE NOCASE ASC',
-    );
+    final List<Map<String, Object?>> rows = normalizedQuery.isEmpty
+        ? await db.query(
+            _contactsTable,
+            where: includePushed ? null : 'isPushed = 0',
+            orderBy: 'word COLLATE NOCASE ASC',
+          )
+        : await db.rawQuery(
+            '''
+            SELECT * FROM $_contactsTable
+            WHERE word LIKE ?
+              AND (? = 1 OR isPushed = 0)
+            ORDER BY
+              CASE
+                WHEN lower(word) = lower(?) THEN 0
+                WHEN lower(word) LIKE lower(?) THEN 1
+                ELSE 2
+              END,
+              word COLLATE NOCASE ASC
+            ''',
+            <Object?>[
+              '%$normalizedQuery%',
+              includePushed ? 1 : 0,
+              normalizedQuery,
+              '$normalizedQuery%',
+            ],
+          );
 
     return rows.map((Map<String, Object?> row) => Word.fromMap(row)).toList();
+  }
+
+  Future<Word?> findWord({
+    required String word,
+    required String meaning,
+  }) async {
+    final sqflite.Database db = await database;
+    final List<Map<String, Object?>> rows = await db.query(
+      _contactsTable,
+      where: 'lower(word) = lower(?) AND meaning = ?',
+      whereArgs: <Object?>[word.trim(), meaning.trim()],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return null;
+    }
+    return Word.fromMap(rows.first);
   }
 
   Future<void> addWord(String word, String partOfSpeech, String meaning) async {
@@ -231,6 +331,11 @@ class AppDatabase {
     );
   }
 
+  Future<void> deleteAllWords() async {
+    final sqflite.Database db = await database;
+    await db.delete(_contactsTable);
+  }
+
   Future<List<Word>> getPushedWords() async {
     final sqflite.Database db = await database;
     final List<Map<String, Object?>> rows = await db.query(
@@ -249,5 +354,67 @@ class AppDatabase {
       where: 'id = ?',
       whereArgs: <Object?>[id],
     );
+  }
+
+  Future<List<DictionaryEntry>> searchDictionary({String query = ''}) async {
+    final sqflite.Database db = await database;
+    final String normalizedQuery = query.trim();
+    final List<Map<String, Object?>> rows = normalizedQuery.isEmpty
+        ? <Map<String, Object?>>[]
+        : await db.rawQuery(
+            '''
+            SELECT * FROM $_dictionaryTable
+            WHERE word LIKE ?
+            ORDER BY
+              CASE
+                WHEN lower(word) = lower(?) THEN 0
+                WHEN lower(word) LIKE lower(?) THEN 1
+                ELSE 2
+              END,
+              word COLLATE NOCASE ASC
+            ''',
+            <Object?>[
+              '%$normalizedQuery%',
+              normalizedQuery,
+              '$normalizedQuery%',
+            ],
+          );
+
+    return rows
+        .map((Map<String, Object?> row) => DictionaryEntry.fromMap(row))
+        .toList();
+  }
+
+  Future<int> insertDictionaryEntry(DictionaryEntry entry) async {
+    final sqflite.Database db = await database;
+    try {
+      return await db.insert(_dictionaryTable, entry.toMap(),
+          conflictAlgorithm: sqflite.ConflictAlgorithm.ignore);
+    } catch (_) {
+      return -1;
+    }
+  }
+
+  Future<void> insertDictionaryBatch(
+      List<DictionaryEntry> entries) async {
+    final sqflite.Database db = await database;
+    final sqflite.Batch batch = db.batch();
+    for (final DictionaryEntry entry in entries) {
+      batch.insert(_dictionaryTable, entry.toMap(),
+          conflictAlgorithm: sqflite.ConflictAlgorithm.ignore);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<int> getDictionaryCount() async {
+    final sqflite.Database db = await database;
+    final List<Map<String, Object?>> result =
+        await db.rawQuery('SELECT COUNT(*) as count FROM $_dictionaryTable');
+    return result.isNotEmpty ? (result[0]['count'] as int?) ?? 0 : 0;
+  }
+
+  Future<void> clearDictionary() async {
+    final sqflite.Database db = await database;
+    await db.delete(_dictionaryTable);
   }
 }

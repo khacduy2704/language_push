@@ -47,4 +47,9 @@ class WordProvider extends ChangeNotifier {
     await _db.deleteWord(id);
     await _fetch();
   }
+
+  Future<void> clearAllWords() async {
+    await _db.deleteAllWords();
+    await _fetch();
+  }
 }

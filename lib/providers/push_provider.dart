@@ -49,6 +49,12 @@ class PushProvider extends ChangeNotifier {
     _reschedule(intervalMinutes);
   }
 
+  Future<void> clearAllWords(int intervalMinutes) async {
+    pushedWords = <Word>[];
+    notifyListeners();
+    _reschedule(intervalMinutes);
+  }
+
   void replaceWord(Word updated, int intervalMinutes) {
     final int index = pushedWords.indexWhere((Word w) => w.id == updated.id);
     if (index < 0) {

@@ -14,7 +14,7 @@ void main() {
   testWidgets('Bottom navigation switches tabs', (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
 
-    expect(find.text('World'), findsWidgets);
+    expect(find.text('Word'), findsWidgets);
     expect(find.text('Setting Screen'), findsNothing);
 
     await tester.tap(find.byIcon(Icons.home));
