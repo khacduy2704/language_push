@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../data/app_database.dart';
@@ -20,7 +22,8 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
+  bool _notificationsEnabled = true;
   int _selectedIndex = 0;
 
   static const List<String> _tabLabels = [
@@ -33,7 +36,9 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     NotificationService.instance.requestPermissions();
+    _refreshNotificationPermissionStatus();
   }
 
   Future<void> _showAddWordDialog() async {
@@ -129,6 +134,10 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  Future<void> _signOut() async {
+    await FirebaseAuth.instance.signOut();
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isSettingTab = _selectedIndex == 3;
@@ -147,23 +156,30 @@ class _HomeShellState extends State<HomeShell> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        actions: _selectedIndex == 0
-            ? <Widget>[
-                IconButton(
-                  onPressed: _showClearAllWordsDialog,
-                  icon: const Icon(
-                    Icons.delete_sweep,
-                    color: Color(0xFFE65A67),
-                    size: 28,
-                  ),
-                ),
-                IconButton(
-                  onPressed: _showAddWordDialog,
-                  icon:
-                      const Icon(Icons.add, color: Color(0xFFE65A67), size: 30),
-                ),
-              ]
-            : null,
+        actions: <Widget>[
+          if (_selectedIndex == 0)
+            IconButton(
+              onPressed: _showClearAllWordsDialog,
+              icon: const Icon(
+                Icons.delete_sweep,
+                color: Color(0xFFE65A67),
+                size: 28,
+              ),
+            ),
+          if (_selectedIndex == 0)
+            IconButton(
+              onPressed: _showAddWordDialog,
+              icon: const Icon(Icons.add, color: Color(0xFFE65A67), size: 30),
+            ),
+          IconButton(
+            onPressed: _signOut,
+            tooltip: 'Sign out',
+            icon: Icon(
+              Icons.logout,
+              color: isSettingTab ? Colors.white : const Color(0xFF3B4957),
+            ),
+          ),
+        ],
       ),
       body: IndexedStack(
         index: _selectedIndex,
@@ -193,20 +209,88 @@ class _HomeShellState extends State<HomeShell> {
             )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF3B4957),
-        unselectedItemColor: const Color(0xFF8994A3),
-        currentIndex: _selectedIndex,
-        onTap: (int index) => setState(() => _selectedIndex = index),
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(icon: Icon(Icons.public), label: 'Word'),
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.settings), label: 'Setting'),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (!_notificationsEnabled)
+            Material(
+              color: const Color(0xFFFFF4D6),
+              child: InkWell(
+                onTap: _openNotificationSettings,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.notifications_off_rounded,
+                        color: Color(0xFF8A5B00),
+                        size: 18,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Notifications are off. Tap here to turn them on in app settings.',
+                          style: TextStyle(
+                            color: Color(0xFF8A5B00),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Icon(
+                        Icons.open_in_new_rounded,
+                        color: Color(0xFF8A5B00),
+                        size: 16,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: const Color(0xFF3B4957),
+            unselectedItemColor: const Color(0xFF8994A3),
+            currentIndex: _selectedIndex,
+            onTap: (int index) => setState(() => _selectedIndex = index),
+            items: const <BottomNavigationBarItem>[
+              BottomNavigationBarItem(icon: Icon(Icons.public), label: 'Word'),
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
+              BottomNavigationBarItem(
+                  icon: Icon(Icons.settings), label: 'Setting'),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshNotificationPermissionStatus();
+    }
+  }
+
+  Future<void> _refreshNotificationPermissionStatus() async {
+    final PermissionStatus status = await Permission.notification.status;
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _notificationsEnabled = status.isGranted;
+    });
+  }
+
+  Future<void> _openNotificationSettings() async {
+    await openAppSettings();
   }
 }

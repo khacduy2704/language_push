@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +9,7 @@ import '../providers/push_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/picker_bottom_sheet.dart';
 import '../widgets/setting_row.dart';
+import 'cached_audio_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -18,6 +20,36 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late Future<String> _dbPathFuture;
+
+  void _showAccountInfoDialog(BuildContext context, User? user) {
+    final String email = user?.email ?? 'No email';
+    final String name = user?.displayName ?? 'No display name';
+    final String uid = user?.uid ?? 'Not signed in';
+
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('Account Information'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text('Email: $email'),
+            const SizedBox(height: 8),
+            Text('Display name: $name'),
+            const SizedBox(height: 8),
+            SelectableText('UID: $uid'),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -78,6 +110,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
       children: <Widget>[
+        const Padding(
+          padding: EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            'Account',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF8994A3),
+            ),
+          ),
+        ),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Material(
+            color: Colors.white,
+            child: StreamBuilder<User?>(
+              stream: FirebaseAuth.instance.authStateChanges(),
+              builder: (BuildContext context, AsyncSnapshot<User?> snapshot) {
+                final User? user = snapshot.data;
+                final String accountValue = user?.email ?? 'Not signed in';
+                return SettingRow(
+                  icon: Icons.account_circle_outlined,
+                  label: 'User account',
+                  value: accountValue,
+                  onTap: () => _showAccountInfoDialog(context, user),
+                );
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
         const Padding(
           padding: EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
@@ -220,6 +283,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Padding(
+          padding: EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            'Audio',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF8994A3),
+            ),
+          ),
+        ),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Material(
+            color: Colors.white,
+            child: InkWell(
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const CachedAudioScreen(),
+                ),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.audio_file_rounded,
+                      size: 22,
+                      color: Color(0xFF8994A3),
+                    ),
+                    SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'Cached Audio Files',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF3B4957),
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right,
+                      color: Color(0xFF8994A3),
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

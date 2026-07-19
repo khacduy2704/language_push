@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:provider/provider.dart';
 
@@ -11,6 +12,12 @@ import 'providers/word_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.instance.initialize();
+  bool firebaseReady = true;
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {
+    firebaseReady = false;
+  }
   HomeWidget.setAppGroupId('group.com.example.push_language');
   runApp(
     MultiProvider(
@@ -19,7 +26,7 @@ void main() async {
         ChangeNotifierProvider<PushProvider>(create: (_) => PushProvider()),
         ChangeNotifierProvider<SettingsProvider>(create: (_) => SettingsProvider()),
       ],
-      child: const App(),
+      child: App(firebaseReady: firebaseReady),
     ),
   );
 }

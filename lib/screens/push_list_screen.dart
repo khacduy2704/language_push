@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../data/app_database.dart';
 import '../providers/push_provider.dart';
 import '../providers/settings_provider.dart';
+import '../widgets/word_list_item.dart';
 
 class PushListScreen extends StatelessWidget {
   const PushListScreen({super.key});
@@ -29,9 +30,6 @@ class PushListScreen extends StatelessWidget {
           const Divider(height: 1, thickness: 1, color: Color(0xFFC5CCD5)),
       itemBuilder: (BuildContext context, int index) {
         final Word word = pushedWords[index];
-        final String itemLine = word.meaning.isEmpty
-            ? '${word.word} (${word.partOfSpeech})'
-            : '${word.word} (${word.partOfSpeech}) ${word.meaning}';
 
         return Dismissible(
           key: ValueKey<int?>(word.id),
@@ -83,17 +81,9 @@ class PushListScreen extends StatelessWidget {
               );
             }
           },
-          child: Container(
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
-            child: Text(
-              itemLine,
-              style: const TextStyle(
-                fontSize: 33 / 2,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF3B4957),
-              ),
-            ),
+          child: WordListItem(
+            word: word,
+            showMenu: false,
           ),
         );
       },

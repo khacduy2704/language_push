@@ -85,7 +85,8 @@ class AppDatabase {
   static const String _dbName = 'push_language.db';
   static const String _contactsTable = 'contacts';
   static const String _dictionaryTable = 'dictionary';
-  static const int _dbVersion = 4;
+  static const String _cachedAudioTable = 'cached_audio';
+  static const int _dbVersion = 5;
 
   sqflite.Database? _database;
 
@@ -134,6 +135,15 @@ class AppDatabase {
           ''');
 
           await _seedWords(db);
+
+          await db.execute('''
+            CREATE TABLE $_cachedAudioTable (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              word TEXT NOT NULL UNIQUE,
+              filePath TEXT NOT NULL,
+              downloadedAt TEXT NOT NULL
+            )
+          ''');
         },
         onUpgrade: (sqflite.Database db, int oldVersion, int newVersion) async {
           if (oldVersion < 2) {
@@ -152,6 +162,16 @@ class AppDatabase {
                 ipa TEXT NOT NULL DEFAULT '',
                 partOfSpeech TEXT NOT NULL DEFAULT '',
                 meaning TEXT NOT NULL DEFAULT ''
+              )
+            ''');
+          }
+          if (oldVersion < 5) {
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS $_cachedAudioTable (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                word TEXT NOT NULL UNIQUE,
+                filePath TEXT NOT NULL,
+                downloadedAt TEXT NOT NULL
               )
             ''');
           }
@@ -417,4 +437,114 @@ class AppDatabase {
     final sqflite.Database db = await database;
     await db.delete(_dictionaryTable);
   }
+
+  // ── Cached audio ──────────────────────────────────────────────────────────
+
+  /// Incremented every time an audio file is successfully cached.
+  /// Listeners (e.g. word list items) can watch this to refresh their state.
+  final ValueNotifier<int> audioCacheVersion = ValueNotifier<int>(0);
+
+  Future<void> _ensureCachedAudioTable(sqflite.Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS $_cachedAudioTable (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word TEXT NOT NULL UNIQUE,
+        filePath TEXT NOT NULL,
+        downloadedAt TEXT NOT NULL
+      )
+    ''');
+
+    final List<Map<String, Object?>> columns = await db.rawQuery(
+      'PRAGMA table_info($_cachedAudioTable)',
+    );
+    final Set<String> names = columns
+        .map((Map<String, Object?> row) => row['name'] as String)
+        .toSet();
+
+    if (!names.contains('filePath')) {
+      await db.execute(
+        'ALTER TABLE $_cachedAudioTable ADD COLUMN filePath TEXT NOT NULL DEFAULT ""',
+      );
+    }
+    if (!names.contains('downloadedAt')) {
+      await db.execute(
+        'ALTER TABLE $_cachedAudioTable ADD COLUMN downloadedAt TEXT NOT NULL DEFAULT ""',
+      );
+    }
+  }
+
+  Future<bool> hasCachedAudio(String word) async {
+    final sqflite.Database db = await database;
+    await _ensureCachedAudioTable(db);
+    final List<Map<String, Object?>> rows = await db.query(
+      _cachedAudioTable,
+      columns: <String>['filePath'],
+      where: 'word = ?',
+      whereArgs: <Object?>[word.trim().toLowerCase()],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  Future<void> upsertCachedAudio(String word, String filePath) async {
+    final sqflite.Database db = await database;
+    await _ensureCachedAudioTable(db);
+    await db.insert(
+      _cachedAudioTable,
+      <String, Object?>{
+        'word': word.trim().toLowerCase(),
+        'filePath': filePath,
+        'downloadedAt': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: sqflite.ConflictAlgorithm.replace,
+    );
+    audioCacheVersion.value++;
+  }
+
+  Future<void> deleteCachedAudio(String word) async {
+    final sqflite.Database db = await database;
+    await _ensureCachedAudioTable(db);
+    await db.delete(
+      _cachedAudioTable,
+      where: 'word = ?',
+      whereArgs: <Object?>[word.trim().toLowerCase()],
+    );
+  }
+
+  Future<List<CachedAudio>> getCachedAudioList() async {
+    final sqflite.Database db = await database;
+    await _ensureCachedAudioTable(db);
+    final List<Map<String, Object?>> rows = await db.query(
+      _cachedAudioTable,
+      orderBy: 'downloadedAt DESC',
+    );
+    return rows.map(CachedAudio.fromMap).toList();
+  }
+
+  Future<void> clearCachedAudioTable() async {
+    final sqflite.Database db = await database;
+    await _ensureCachedAudioTable(db);
+    await db.delete(_cachedAudioTable);
+  }
+}
+
+class CachedAudio {
+  final int? id;
+  final String word;
+  final String filePath;
+  final DateTime downloadedAt;
+
+  const CachedAudio({
+    this.id,
+    required this.word,
+    required this.filePath,
+    required this.downloadedAt,
+  });
+
+  factory CachedAudio.fromMap(Map<String, Object?> map) => CachedAudio(
+        id: map['id'] as int?,
+        word: map['word']! as String,
+        filePath: map['filePath']! as String,
+        downloadedAt: DateTime.parse(map['downloadedAt']! as String),
+      );
 }

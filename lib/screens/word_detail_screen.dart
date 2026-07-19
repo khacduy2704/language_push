@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -214,6 +216,7 @@ class _WordDetailScreenState extends State<WordDetailScreen> {
       _loadMeaningFromFile(entry);
     }
     _meaningGroups = _parseMeanings(_meaning);
+    unawaited(_pronunciationService.prefetchWordAudio(_word));
   }
 
   Future<void> _loadMeaningFromFile(DictWord entry) async {

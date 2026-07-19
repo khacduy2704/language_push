@@ -4,6 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/app_database.dart';
+import '../data/pronunciation_service.dart';
+
+enum _PracticeMode { typing, flashcard, listenAndWrite }
+
+class _PracticeTurn {
+  final Word word;
+  final _PracticeMode mode;
+  const _PracticeTurn(this.word, this.mode);
+}
 
 class PracticeScreen extends StatefulWidget {
   final List<Word> words;
@@ -21,20 +30,42 @@ class _PracticeScreenState extends State<PracticeScreen> {
   late final TextEditingController _answerController;
   late final FocusNode _answerFocusNode;
   late final List<Word> _words;
+  final PronunciationService _pronunciationService = PronunciationService();
   final Random _random = Random();
+  final Set<String> _completedWordKeys = <String>{};
+  List<_PracticeTurn> _turns = <_PracticeTurn>[];
+  bool _isLoading = true;
   int _currentIndex = 0;
   bool _showResult = false;
   bool _isCorrect = false;
+  bool _isPlayingAudio = false;
   List<String> _flashOptions = <String>[];
   String? _selectedFlashAnswer;
 
-  bool get _isTypingTurn => _currentIndex.isEven;
+  _PracticeMode get _currentMode =>
+      _turns.isEmpty ? _PracticeMode.typing : _turns[_currentIndex].mode;
 
-  bool get _canCheck => !_showResult && _answerController.text.trim().isNotEmpty;
+  bool get _canCheck =>
+      !_showResult && _answerController.text.trim().isNotEmpty;
 
-  Word get _currentWord => _words[_currentIndex];
+  Word get _currentWord =>
+      _turns.isEmpty ? widget.words.first : _turns[_currentIndex].word;
 
-  bool get _isLastWord => _currentIndex == _words.length - 1;
+  bool get _isLastWord => _findNextTurnIndex() == null;
+
+  String _wordKey(Word word) {
+    return '${word.id ?? -1}|${word.word.trim().toLowerCase()}|${word.meaning.trim().toLowerCase()}';
+  }
+
+  int? _findNextTurnIndex() {
+    for (int i = _currentIndex + 1; i < _turns.length; i++) {
+      if (_completedWordKeys.contains(_wordKey(_turns[i].word))) {
+        continue;
+      }
+      return i;
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -43,7 +74,35 @@ class _PracticeScreenState extends State<PracticeScreen> {
     _answerController.addListener(_onAnswerChanged);
     _answerFocusNode = FocusNode();
     _words = List<Word>.from(widget.words);
-    _prepareFlashOptions();
+    _buildTurns();
+  }
+
+  Future<void> _buildTurns() async {
+    final List<_PracticeTurn> turns = <_PracticeTurn>[];
+    for (final Word word in _words) {
+      final List<_PracticeMode> modes = <_PracticeMode>[
+        _PracticeMode.typing,
+        _PracticeMode.flashcard,
+      ];
+      final bool cached =
+          await _pronunciationService.isAudioCached(word.word);
+      if (cached) {
+        modes.add(_PracticeMode.listenAndWrite);
+      }
+
+      modes.shuffle(_random);
+      for (final _PracticeMode mode in modes) {
+        turns.add(_PracticeTurn(word, mode));
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _turns = turns;
+      _isLoading = false;
+      _prepareFlashOptions();
+    });
   }
 
   @override
@@ -51,6 +110,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
     _answerController.removeListener(_onAnswerChanged);
     _answerController.dispose();
     _answerFocusNode.dispose();
+    _pronunciationService.dispose();
     super.dispose();
   }
 
@@ -64,9 +124,13 @@ class _PracticeScreenState extends State<PracticeScreen> {
   void _checkAnswer() {
     final String answer = _answerController.text.trim().toLowerCase();
     final String target = _currentWord.word.trim().toLowerCase();
+    final bool isCorrect = answer == target;
 
     setState(() {
-      _isCorrect = answer == target;
+      _isCorrect = isCorrect;
+      if (isCorrect) {
+        _completedWordKeys.add(_wordKey(_currentWord));
+      }
       _showResult = true;
     });
   }
@@ -78,14 +142,21 @@ class _PracticeScreenState extends State<PracticeScreen> {
 
     final String selected = selectedWord.trim().toLowerCase();
     final String target = _currentWord.word.trim().toLowerCase();
+    final bool isCorrect = selected == target;
     setState(() {
       _selectedFlashAnswer = selectedWord;
-      _isCorrect = selected == target;
+      _isCorrect = isCorrect;
+      if (isCorrect) {
+        _completedWordKeys.add(_wordKey(_currentWord));
+      }
       _showResult = true;
     });
   }
 
   void _prepareFlashOptions() {
+    if (_turns.isEmpty) {
+      return;
+    }
     final String correct = _currentWord.word;
     final List<String> pool = _words
         .map((Word w) => w.word)
@@ -113,22 +184,44 @@ class _PracticeScreenState extends State<PracticeScreen> {
   }
 
   void _nextWord() {
-    if (_isLastWord) {
+    final int? nextIndex = _findNextTurnIndex();
+    if (nextIndex == null) {
       Navigator.of(context).pop();
       return;
     }
 
     setState(() {
-      _currentIndex += 1;
+      _currentIndex = nextIndex;
       _showResult = false;
       _isCorrect = false;
       _answerController.clear();
       _selectedFlashAnswer = null;
       _prepareFlashOptions();
-      if (_isTypingTurn) {
+      if (_currentMode == _PracticeMode.typing ||
+          _currentMode == _PracticeMode.listenAndWrite) {
         _answerFocusNode.requestFocus();
       }
     });
+  }
+
+  Future<void> _playAudio({bool slow = false}) async {
+    if (_isPlayingAudio) {
+      return;
+    }
+    setState(() => _isPlayingAudio = true);
+    try {
+      if (slow) {
+        await _pronunciationService.speakSlow(_currentWord.word);
+      } else {
+        await _pronunciationService.playWord(_currentWord.word);
+      }
+    } catch (_) {
+      // Ignore audio errors in practice mode.
+    } finally {
+      if (mounted) {
+        setState(() => _isPlayingAudio = false);
+      }
+    }
   }
 
   String _normalizeInput(String value, int maxLength) {
@@ -147,7 +240,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
     final String typed = _answerController.text;
 
     return GestureDetector(
-      onTap: _showResult || !_isTypingTurn
+      onTap: _showResult
           ? null
           : () => _answerFocusNode.requestFocus(),
       child: Container(
@@ -252,9 +345,132 @@ class _PracticeScreenState extends State<PracticeScreen> {
     );
   }
 
+  Widget _buildListenAndWrite() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            _buildAudioCircleButton(
+              onTap: _isPlayingAudio ? null : () => _playAudio(slow: false),
+              child: const Icon(
+                Icons.volume_up_rounded,
+                color: Colors.white,
+                size: 36,
+              ),
+              size: 76,
+              color: const Color(0xFFFBB034),
+            ),
+            const SizedBox(width: 20),
+            _buildAudioCircleButton(
+              onTap: _isPlayingAudio ? null : () => _playAudio(slow: true),
+              child: const Icon(
+                Icons.slow_motion_video_rounded,
+                color: Colors.white,
+                size: 30,
+              ),
+              size: 62,
+              color: const Color(0xFF9E9E9E),
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        TextField(
+          controller: _answerController,
+          focusNode: _answerFocusNode,
+          enabled: !_showResult,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          onChanged: (String value) {
+            final String normalized =
+                _normalizeInput(value, _currentWord.word.length * 2);
+            if (value != normalized) {
+              _answerController.value = TextEditingValue(
+                text: normalized,
+                selection: TextSelection.collapsed(offset: normalized.length),
+              );
+            }
+          },
+          decoration: InputDecoration(
+            hintText: 'Gõ lại từ bạn nghe được',
+            hintStyle: const TextStyle(
+              color: Color(0xFF9CA3AF),
+              fontSize: 15,
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 14,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(
+                color: Color(0xFF4B7BE5),
+                width: 1.6,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAudioCircleButton({
+    required VoidCallback? onTap,
+    required Widget child,
+    required double size,
+    required Color color,
+  }) {
+    final Color displayColor =
+        onTap == null ? color.withOpacity(0.5) : color;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: displayColor,
+          shape: BoxShape.circle,
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: displayColor.withOpacity(0.4),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Center(child: child),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final String modeLabel = _isTypingTurn ? 'Dien tu' : 'Flashcard';
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFE2E6EB),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final bool isWritingMode = _currentMode == _PracticeMode.typing ||
+        _currentMode == _PracticeMode.listenAndWrite;
+
+    final String modeLabel = switch (_currentMode) {
+      _PracticeMode.typing => 'Điền từ',
+      _PracticeMode.flashcard => 'Flashcard',
+      _PracticeMode.listenAndWrite => 'Nghe và viết lại',
+    };
 
     return Scaffold(
       backgroundColor: const Color(0xFFE2E6EB),
@@ -286,17 +502,20 @@ class _PracticeScreenState extends State<PracticeScreen> {
                 ),
               ),
               const SizedBox(height: 14),
-              Text(
-                '${_currentWord.meaning.isEmpty ? '(No meaning)' : _currentWord.meaning} (${_currentWord.partOfSpeech})',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 52 / 2,
-                  fontWeight: FontWeight.w700,
+              if (_currentMode != _PracticeMode.listenAndWrite)
+                Text(
+                  '${_currentWord.meaning.isEmpty ? '(No meaning)' : _currentWord.meaning} (${_currentWord.partOfSpeech})',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 52 / 2,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
               const SizedBox(height: 14),
-              if (_isTypingTurn) ...<Widget>[
+              if (_currentMode == _PracticeMode.listenAndWrite) ...<Widget>[
+                _buildListenAndWrite(),
+              ] else if (_currentMode == _PracticeMode.typing) ...<Widget>[
                 _buildDashedInput(),
                 Opacity(
                   opacity: 0,
@@ -330,7 +549,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
                 _buildFlashcards(),
               ],
               const Spacer(),
-              if (_isTypingTurn)
+              if (isWritingMode)
                 Center(
                   child: SizedBox(
                     width: 210,
