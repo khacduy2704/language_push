@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 
@@ -16,10 +19,16 @@ class PushProvider extends ChangeNotifier {
 
   Future<void> _loadPushedWords() async {
     try {
-      pushedWords = await _db.getPushedWords();
+      pushedWords = await _db.getPushedWords().timeout(
+        const Duration(seconds: 8),
+      );
       notifyListeners();
       _updateWidget();
-    } catch (_) {}
+    } on TimeoutException {
+      debugPrint('PushProvider: getPushedWords timed out.');
+    } catch (error) {
+      debugPrint('PushProvider: getPushedWords failed: $error');
+    }
   }
 
   bool isWordPushed(int? id) =>
@@ -82,15 +91,17 @@ class PushProvider extends ChangeNotifier {
   void _updateWidget() {
     final String text = pushedWords.isEmpty
         ? 'No words yet'
-        : pushedWords.map((Word w) {
-            return w.meaning.isEmpty
-                ? '${w.word} (${w.partOfSpeech})'
-                : '${w.word} (${w.partOfSpeech}) ${w.meaning}';
-          }).join('\n');
+        : pushedWords
+              .map((Word w) {
+                return w.meaning.isEmpty
+                    ? '${w.word} (${w.partOfSpeech})'
+                    : '${w.word} (${w.partOfSpeech}) ${w.meaning}';
+              })
+              .join('\n');
 
     HomeWidget.saveWidgetData<String>('pushed_words', text);
-    HomeWidget.updateWidget(
-      androidName: 'WordsWidgetProvider',
-    );
+    if (!kIsWeb && Platform.isAndroid) {
+      HomeWidget.updateWidget(androidName: 'WordsWidgetProvider');
+    }
   }
 }

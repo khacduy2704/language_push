@@ -1,0 +1,4 @@
+DerivedData/
+*.xcresult/
+**/xcuserdata/
+PushLanguage/Configuration/GoogleService-Info.plist

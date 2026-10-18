@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -20,6 +21,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late Future<String> _dbPathFuture;
+  bool get _isFirebaseReady => Firebase.apps.isNotEmpty;
 
   void _showAccountInfoDialog(BuildContext context, User? user) {
     final String email = user?.email ?? 'No email';
@@ -80,10 +82,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               child: SelectableText(
                 dbPath,
-                style: const TextStyle(
-                  fontFamily: 'Courier',
-                  fontSize: 12,
-                ),
+                style: const TextStyle(fontFamily: 'Courier', fontSize: 12),
               ),
             ),
             const SizedBox(height: 12),
@@ -126,7 +125,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Material(
             color: Colors.white,
             child: StreamBuilder<User?>(
-              stream: FirebaseAuth.instance.authStateChanges(),
+              stream: _isFirebaseReady
+                  ? FirebaseAuth.instance.authStateChanges()
+                  : const Stream<User?>.empty(),
               builder: (BuildContext context, AsyncSnapshot<User?> snapshot) {
                 final User? user = snapshot.data;
                 final String accountValue = user?.email ?? 'Not signed in';
@@ -225,7 +226,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     }
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     child: Row(
                       children: <Widget>[
                         const Icon(
@@ -250,26 +254,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               FutureBuilder<String>(
                                 future: _dbPathFuture,
                                 builder:
-                                    (BuildContext context, AsyncSnapshot<String> snapshot) {
-                                  if (snapshot.hasData) {
-                                    final String fileName =
-                                        snapshot.data!.split(Platform.pathSeparator).last;
-                                    return Text(
-                                      fileName,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF8994A3),
-                                      ),
-                                    );
-                                  }
-                                  return const Text(
-                                    'Loading...',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF8994A3),
-                                    ),
-                                  );
-                                },
+                                    (
+                                      BuildContext context,
+                                      AsyncSnapshot<String> snapshot,
+                                    ) {
+                                      if (snapshot.hasData) {
+                                        final String fileName = snapshot.data!
+                                            .split(Platform.pathSeparator)
+                                            .last;
+                                        return Text(
+                                          fileName,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF8994A3),
+                                          ),
+                                        );
+                                      }
+                                      return const Text(
+                                        'Loading...',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF8994A3),
+                                        ),
+                                      );
+                                    },
                               ),
                             ],
                           ),

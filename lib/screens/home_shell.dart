@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
@@ -37,32 +38,30 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    NotificationService.instance.requestPermissions();
     _refreshNotificationPermissionStatus();
   }
 
   Future<void> _showAddWordDialog() async {
     final WordFormData? data = await showDialog<WordFormData>(
       context: context,
-      builder: (_) => const WordFormDialog(
-        title: 'Add Word',
-        saveButtonText: 'Save',
-      ),
+      builder: (_) =>
+          const WordFormDialog(title: 'Add Word', saveButtonText: 'Save'),
     );
     if (data == null || !mounted) {
       return;
     }
     try {
-      await context
-          .read<WordProvider>()
-          .addWord(data.word, data.partOfSpeech, data.meaning);
+      await context.read<WordProvider>().addWord(
+        data.word,
+        data.partOfSpeech,
+        data.meaning,
+      );
     } catch (_) {
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Could not save word. Please try again.')),
+        const SnackBar(content: Text('Could not save word. Please try again.')),
       );
     }
   }
@@ -96,7 +95,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     }
 
     try {
-      final int intervalMinutes = context.read<SettingsProvider>().intervalMinutes;
+      final int intervalMinutes = context
+          .read<SettingsProvider>()
+          .intervalMinutes;
       await context.read<WordProvider>().clearAllWords();
       await context.read<PushProvider>().clearAllWords(intervalMinutes);
 
@@ -135,6 +136,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   Future<void> _signOut() async {
+    if (Firebase.apps.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Firebase is not configured for this build.'),
+        ),
+      );
+      return;
+    }
     await FirebaseAuth.instance.signOut();
   }
 
@@ -146,8 +158,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       backgroundColor: const Color(0xFFE2E6EB),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor:
-            isSettingTab ? const Color(0xFFE65A67) : const Color(0xFFE2E6EB),
+        backgroundColor: isSettingTab
+            ? const Color(0xFFE65A67)
+            : const Color(0xFFE2E6EB),
         centerTitle: true,
         title: Text(
           _tabLabels[_selectedIndex],
@@ -196,8 +209,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE65A67),
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 36,
+                  vertical: 14,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -257,9 +272,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             items: const <BottomNavigationBarItem>[
               BottomNavigationBarItem(icon: Icon(Icons.public), label: 'Word'),
               BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-              BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
               BottomNavigationBarItem(
-                  icon: Icon(Icons.settings), label: 'Setting'),
+                icon: Icon(Icons.search),
+                label: 'Search',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.settings),
+                label: 'Setting',
+              ),
             ],
           ),
         ],
@@ -280,17 +300,66 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _refreshNotificationPermissionStatus() async {
-    final PermissionStatus status = await Permission.notification.status;
+  bool _isPermissionEnabled(PermissionStatus status) {
+    switch (status) {
+      case PermissionStatus.granted:
+      case PermissionStatus.provisional:
+      case PermissionStatus.limited:
+        return true;
+      case PermissionStatus.denied:
+      case PermissionStatus.restricted:
+      case PermissionStatus.permanentlyDenied:
+        return false;
+    }
+  }
+
+  Future<void> _refreshNotificationPermissionStatus({
+    bool requestIfNeeded = false,
+  }) async {
+    PermissionStatus status = await Permission.notification.status;
+
+    if (requestIfNeeded && !_isPermissionEnabled(status)) {
+      status = await Permission.notification.request();
+      await NotificationService.instance.requestPermissions();
+      status = await Permission.notification.status;
+    }
+
     if (!mounted) {
       return;
     }
     setState(() {
-      _notificationsEnabled = status.isGranted;
+      _notificationsEnabled = _isPermissionEnabled(status);
     });
   }
 
   Future<void> _openNotificationSettings() async {
-    await openAppSettings();
+    await _refreshNotificationPermissionStatus(requestIfNeeded: true);
+    if (!mounted) {
+      return;
+    }
+
+    if (_notificationsEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Notifications are enabled.')),
+      );
+      return;
+    }
+
+    final bool opened = await openAppSettings();
+    if (!mounted) {
+      return;
+    }
+    if (!opened) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open app settings.')),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Turn on notifications in your device app settings.'),
+      ),
+    );
   }
 }

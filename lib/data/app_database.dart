@@ -38,7 +38,8 @@ class Word {
   );
 
   @override
-  String toString() => 'Word($id, $word, $partOfSpeech, $meaning, isPushed: $isPushed)';
+  String toString() =>
+      'Word($id, $word, $partOfSpeech, $meaning, isPushed: $isPushed)';
 }
 
 class DictionaryEntry {
@@ -89,6 +90,7 @@ class AppDatabase {
   static const int _dbVersion = 5;
 
   sqflite.Database? _database;
+  Future<sqflite.Database>? _openingDatabase;
 
   bool get _isMobile {
     return !kIsWeb && (Platform.isAndroid || Platform.isIOS);
@@ -108,8 +110,22 @@ class AppDatabase {
       return _database!;
     }
 
+    if (_openingDatabase != null) {
+      return _openingDatabase!;
+    }
+
+    _openingDatabase = _openDatabase();
+    try {
+      _database = await _openingDatabase;
+      return _database!;
+    } finally {
+      _openingDatabase = null;
+    }
+  }
+
+  Future<sqflite.Database> _openDatabase() async {
     final String dbPath = await _resolveDbPath();
-    _database = await _databaseFactory.openDatabase(
+    return _databaseFactory.openDatabase(
       dbPath,
       options: sqflite.OpenDatabaseOptions(
         version: _dbVersion,
@@ -178,8 +194,6 @@ class AppDatabase {
         },
       ),
     );
-
-    return _database!;
   }
 
   Future<String> _resolveDbPath() async {
@@ -194,24 +208,47 @@ class AppDatabase {
     return await _resolveDbPath();
   }
 
+  Future<void> resetDatabase() async {
+    final sqflite.Database? currentDb = _database;
+    _database = null;
+    _openingDatabase = null;
+
+    if (currentDb != null && currentDb.isOpen) {
+      await currentDb.close();
+    }
+
+    final String dbPath = await _resolveDbPath();
+    await _databaseFactory.deleteDatabase(dbPath);
+  }
+
   Future<void> _seedWords(sqflite.Database db) async {
     const List<Word> initialWords = <Word>[
       Word(word: 'Hello', partOfSpeech: 'n', meaning: 'A greeting'),
       Word(word: 'Run', partOfSpeech: 'v', meaning: 'To move quickly'),
-      Word(word: 'Beautiful', partOfSpeech: 'adj', meaning: 'Pleasing to the eye'),
+      Word(
+        word: 'Beautiful',
+        partOfSpeech: 'adj',
+        meaning: 'Pleasing to the eye',
+      ),
       Word(word: 'Quickly', partOfSpeech: 'adv', meaning: 'In a fast manner'),
-      Word(word: 'Example', partOfSpeech: 'n', meaning: 'A thing characteristic of its kind'),
+      Word(
+        word: 'Example',
+        partOfSpeech: 'n',
+        meaning: 'A thing characteristic of its kind',
+      ),
       Word(word: 'Speak', partOfSpeech: 'v', meaning: 'To say something'),
       Word(word: 'Happy', partOfSpeech: 'adj', meaning: 'Feeling pleasure'),
       Word(word: 'Slowly', partOfSpeech: 'adv', meaning: 'In a slow manner'),
-      Word(word: 'Friend', partOfSpeech: 'n', meaning: 'A person with whom one has a bond'),
+      Word(
+        word: 'Friend',
+        partOfSpeech: 'n',
+        meaning: 'A person with whom one has a bond',
+      ),
     ];
 
-    final sqflite.Batch batch = db.batch();
     for (final Word word in initialWords) {
-      batch.insert(_contactsTable, word.toMap());
+      await db.insert(_contactsTable, word.toMap());
     }
-    await batch.commit(noResult: true);
   }
 
   Future<void> _migrateFromLegacySchema(sqflite.Database db) async {
@@ -250,10 +287,15 @@ class AppDatabase {
     }
 
     await db.execute('DROP TABLE $_contactsTable');
-    await db.execute('ALTER TABLE ${_contactsTable}_new RENAME TO $_contactsTable');
+    await db.execute(
+      'ALTER TABLE ${_contactsTable}_new RENAME TO $_contactsTable',
+    );
   }
 
-  Future<List<Word>> getWords({String query = '', bool includePushed = true}) async {
+  Future<List<Word>> getWords({
+    String query = '',
+    bool includePushed = true,
+  }) async {
     final sqflite.Database db = await database;
 
     final String normalizedQuery = query.trim();
@@ -307,20 +349,28 @@ class AppDatabase {
   Future<void> addWord(String word, String partOfSpeech, String meaning) async {
     final String wordTrimmed = word.trim();
     final String meaningTrimmed = meaning.trim();
-    
+
     if (wordTrimmed.isEmpty) {
       return;
     }
 
     final sqflite.Database db = await database;
-    await db.insert(_contactsTable, Word(
-      word: wordTrimmed,
-      partOfSpeech: partOfSpeech.isEmpty ? 'None' : partOfSpeech,
-      meaning: meaningTrimmed,
-    ).toMap());
+    await db.insert(
+      _contactsTable,
+      Word(
+        word: wordTrimmed,
+        partOfSpeech: partOfSpeech.isEmpty ? 'None' : partOfSpeech,
+        meaning: meaningTrimmed,
+      ).toMap(),
+    );
   }
 
-  Future<void> updateWord(int id, String word, String partOfSpeech, String meaning) async {
+  Future<void> updateWord(
+    int id,
+    String word,
+    String partOfSpeech,
+    String meaning,
+  ) async {
     final String wordTrimmed = word.trim();
     final String meaningTrimmed = meaning.trim();
 
@@ -344,11 +394,7 @@ class AppDatabase {
 
   Future<void> deleteWord(int id) async {
     final sqflite.Database db = await database;
-    await db.delete(
-      _contactsTable,
-      where: 'id = ?',
-      whereArgs: <Object?>[id],
-    );
+    await db.delete(_contactsTable, where: 'id = ?', whereArgs: <Object?>[id]);
   }
 
   Future<void> deleteAllWords() async {
@@ -408,28 +454,34 @@ class AppDatabase {
   Future<int> insertDictionaryEntry(DictionaryEntry entry) async {
     final sqflite.Database db = await database;
     try {
-      return await db.insert(_dictionaryTable, entry.toMap(),
-          conflictAlgorithm: sqflite.ConflictAlgorithm.ignore);
+      return await db.insert(
+        _dictionaryTable,
+        entry.toMap(),
+        conflictAlgorithm: sqflite.ConflictAlgorithm.ignore,
+      );
     } catch (_) {
       return -1;
     }
   }
 
-  Future<void> insertDictionaryBatch(
-      List<DictionaryEntry> entries) async {
+  Future<void> insertDictionaryBatch(List<DictionaryEntry> entries) async {
     final sqflite.Database db = await database;
     final sqflite.Batch batch = db.batch();
     for (final DictionaryEntry entry in entries) {
-      batch.insert(_dictionaryTable, entry.toMap(),
-          conflictAlgorithm: sqflite.ConflictAlgorithm.ignore);
+      batch.insert(
+        _dictionaryTable,
+        entry.toMap(),
+        conflictAlgorithm: sqflite.ConflictAlgorithm.ignore,
+      );
     }
     await batch.commit(noResult: true);
   }
 
   Future<int> getDictionaryCount() async {
     final sqflite.Database db = await database;
-    final List<Map<String, Object?>> result =
-        await db.rawQuery('SELECT COUNT(*) as count FROM $_dictionaryTable');
+    final List<Map<String, Object?>> result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM $_dictionaryTable',
+    );
     return result.isNotEmpty ? (result[0]['count'] as int?) ?? 0 : 0;
   }
 
@@ -444,38 +496,8 @@ class AppDatabase {
   /// Listeners (e.g. word list items) can watch this to refresh their state.
   final ValueNotifier<int> audioCacheVersion = ValueNotifier<int>(0);
 
-  Future<void> _ensureCachedAudioTable(sqflite.Database db) async {
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS $_cachedAudioTable (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        word TEXT NOT NULL UNIQUE,
-        filePath TEXT NOT NULL,
-        downloadedAt TEXT NOT NULL
-      )
-    ''');
-
-    final List<Map<String, Object?>> columns = await db.rawQuery(
-      'PRAGMA table_info($_cachedAudioTable)',
-    );
-    final Set<String> names = columns
-        .map((Map<String, Object?> row) => row['name'] as String)
-        .toSet();
-
-    if (!names.contains('filePath')) {
-      await db.execute(
-        'ALTER TABLE $_cachedAudioTable ADD COLUMN filePath TEXT NOT NULL DEFAULT ""',
-      );
-    }
-    if (!names.contains('downloadedAt')) {
-      await db.execute(
-        'ALTER TABLE $_cachedAudioTable ADD COLUMN downloadedAt TEXT NOT NULL DEFAULT ""',
-      );
-    }
-  }
-
   Future<bool> hasCachedAudio(String word) async {
     final sqflite.Database db = await database;
-    await _ensureCachedAudioTable(db);
     final List<Map<String, Object?>> rows = await db.query(
       _cachedAudioTable,
       columns: <String>['filePath'],
@@ -488,22 +510,16 @@ class AppDatabase {
 
   Future<void> upsertCachedAudio(String word, String filePath) async {
     final sqflite.Database db = await database;
-    await _ensureCachedAudioTable(db);
-    await db.insert(
-      _cachedAudioTable,
-      <String, Object?>{
-        'word': word.trim().toLowerCase(),
-        'filePath': filePath,
-        'downloadedAt': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: sqflite.ConflictAlgorithm.replace,
-    );
+    await db.insert(_cachedAudioTable, <String, Object?>{
+      'word': word.trim().toLowerCase(),
+      'filePath': filePath,
+      'downloadedAt': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: sqflite.ConflictAlgorithm.replace);
     audioCacheVersion.value++;
   }
 
   Future<void> deleteCachedAudio(String word) async {
     final sqflite.Database db = await database;
-    await _ensureCachedAudioTable(db);
     await db.delete(
       _cachedAudioTable,
       where: 'word = ?',
@@ -513,7 +529,6 @@ class AppDatabase {
 
   Future<List<CachedAudio>> getCachedAudioList() async {
     final sqflite.Database db = await database;
-    await _ensureCachedAudioTable(db);
     final List<Map<String, Object?>> rows = await db.query(
       _cachedAudioTable,
       orderBy: 'downloadedAt DESC',
@@ -523,7 +538,6 @@ class AppDatabase {
 
   Future<void> clearCachedAudioTable() async {
     final sqflite.Database db = await database;
-    await _ensureCachedAudioTable(db);
     await db.delete(_cachedAudioTable);
   }
 }
@@ -542,9 +556,9 @@ class CachedAudio {
   });
 
   factory CachedAudio.fromMap(Map<String, Object?> map) => CachedAudio(
-        id: map['id'] as int?,
-        word: map['word']! as String,
-        filePath: map['filePath']! as String,
-        downloadedAt: DateTime.parse(map['downloadedAt']! as String),
-      );
+    id: map['id'] as int?,
+    word: map['word']! as String,
+    filePath: map['filePath']! as String,
+    downloadedAt: DateTime.parse(map['downloadedAt']! as String),
+  );
 }

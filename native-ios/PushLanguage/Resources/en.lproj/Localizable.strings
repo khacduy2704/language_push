@@ -1,0 +1,11 @@
+"%lld min" = "%lld min";
+"Practice score: %lld/5" = "Practice score: %lld/5";
+"Correct answers: %lld" = "Correct answers: %lld";
+"Incorrect answers: %lld" = "Incorrect answers: %lld";
+"%lld min · %lld words" = "%lld min · %lld words";
+"Push words (%lld)" = "Push words (%lld)";
+"%lld words in push list. Each reminder randomly selects up to %lld words." = "%lld words in push list. Each reminder randomly selects up to %lld words.";
+"%lld characters" = "%lld characters";
+"%lld/%lld words answered correctly" = "%lld/%lld words answered correctly";
+"Delete \"%@\"?" = "Delete \"%@\"?";
+"Remove \"%@\" from reminders? The word stays in World." = "Remove \"%@\" from reminders? The word stays in World.";

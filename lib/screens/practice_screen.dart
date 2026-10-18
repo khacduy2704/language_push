@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -17,10 +18,7 @@ class _PracticeTurn {
 class PracticeScreen extends StatefulWidget {
   final List<Word> words;
 
-  const PracticeScreen({
-    super.key,
-    required this.words,
-  });
+  const PracticeScreen({super.key, required this.words});
 
   @override
   State<PracticeScreen> createState() => _PracticeScreenState();
@@ -31,6 +29,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
   late final FocusNode _answerFocusNode;
   late final List<Word> _words;
   final PronunciationService _pronunciationService = PronunciationService();
+  final AudioPlayer _feedbackPlayer = AudioPlayer();
   final Random _random = Random();
   final Set<String> _completedWordKeys = <String>{};
   List<_PracticeTurn> _turns = <_PracticeTurn>[];
@@ -84,8 +83,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
         _PracticeMode.typing,
         _PracticeMode.flashcard,
       ];
-      final bool cached =
-          await _pronunciationService.isAudioCached(word.word);
+      final bool cached = await _pronunciationService.isAudioCached(word.word);
       if (cached) {
         modes.add(_PracticeMode.listenAndWrite);
       }
@@ -110,6 +108,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
     _answerController.removeListener(_onAnswerChanged);
     _answerController.dispose();
     _answerFocusNode.dispose();
+    _feedbackPlayer.dispose();
     _pronunciationService.dispose();
     super.dispose();
   }
@@ -133,6 +132,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
       }
       _showResult = true;
     });
+    _playFeedbackSound(isCorrect);
   }
 
   void _checkFlashcard(String selectedWord) {
@@ -151,6 +151,18 @@ class _PracticeScreenState extends State<PracticeScreen> {
       }
       _showResult = true;
     });
+    _playFeedbackSound(isCorrect);
+  }
+
+  Future<void> _playFeedbackSound(bool isCorrect) async {
+    final String fileName = isCorrect ? 'correct.mp3' : 'incorrect.mp3';
+    try {
+      await _feedbackPlayer.stop();
+      await _feedbackPlayer.play(AssetSource('audio/$fileName'));
+    } catch (error, stackTrace) {
+      debugPrint('Failed to play feedback sound "$fileName": $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   void _prepareFlashOptions() {
@@ -240,9 +252,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
     final String typed = _answerController.text;
 
     return GestureDetector(
-      onTap: _showResult
-          ? null
-          : () => _answerFocusNode.requestFocus(),
+      onTap: _showResult ? null : () => _answerFocusNode.requestFocus(),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
@@ -282,10 +292,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
                     ),
                   ),
                   const SizedBox(height: 3),
-                  Container(
-                    height: 2,
-                    color: const Color(0xFFB5BAC1),
-                  ),
+                  Container(height: 2, color: const Color(0xFFB5BAC1)),
                 ],
               ),
             );
@@ -383,8 +390,10 @@ class _PracticeScreenState extends State<PracticeScreen> {
           autofocus: true,
           textInputAction: TextInputAction.done,
           onChanged: (String value) {
-            final String normalized =
-                _normalizeInput(value, _currentWord.word.length * 2);
+            final String normalized = _normalizeInput(
+              value,
+              _currentWord.word.length * 2,
+            );
             if (value != normalized) {
               _answerController.value = TextEditingValue(
                 text: normalized,
@@ -394,10 +403,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
           },
           decoration: InputDecoration(
             hintText: 'Gõ lại từ bạn nghe được',
-            hintStyle: const TextStyle(
-              color: Color(0xFF9CA3AF),
-              fontSize: 15,
-            ),
+            hintStyle: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 15),
             filled: true,
             fillColor: Colors.white,
             contentPadding: const EdgeInsets.symmetric(
@@ -431,8 +437,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
     required double size,
     required Color color,
   }) {
-    final Color displayColor =
-        onTap == null ? color.withOpacity(0.5) : color;
+    final Color displayColor = onTap == null ? color.withOpacity(0.5) : color;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -463,7 +468,8 @@ class _PracticeScreenState extends State<PracticeScreen> {
       );
     }
 
-    final bool isWritingMode = _currentMode == _PracticeMode.typing ||
+    final bool isWritingMode =
+        _currentMode == _PracticeMode.typing ||
         _currentMode == _PracticeMode.listenAndWrite;
 
     final String modeLabel = switch (_currentMode) {
@@ -527,11 +533,15 @@ class _PracticeScreenState extends State<PracticeScreen> {
                       enabled: !_showResult,
                       autofocus: true,
                       inputFormatters: <TextInputFormatter>[
-                        LengthLimitingTextInputFormatter(_currentWord.word.length),
+                        LengthLimitingTextInputFormatter(
+                          _currentWord.word.length,
+                        ),
                       ],
                       onChanged: (String value) {
-                        final String normalized =
-                            _normalizeInput(value, _currentWord.word.length);
+                        final String normalized = _normalizeInput(
+                          value,
+                          _currentWord.word.length,
+                        );
                         if (value == normalized) {
                           return;
                         }
@@ -545,9 +555,7 @@ class _PracticeScreenState extends State<PracticeScreen> {
                     ),
                   ),
                 ),
-              ] else ...<Widget>[
-                _buildFlashcards(),
-              ],
+              ] else ...<Widget>[_buildFlashcards()],
               const Spacer(),
               if (isWritingMode)
                 Center(
@@ -585,8 +593,12 @@ class _PracticeScreenState extends State<PracticeScreen> {
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
               decoration: BoxDecoration(
-                color: _isCorrect ? const Color(0xFF20B63A) : const Color(0xFFE65A67),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                color: _isCorrect
+                    ? const Color(0xFF20B63A)
+                    : const Color(0xFFE65A67),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(14),
+                ),
               ),
               child: SafeArea(
                 top: false,

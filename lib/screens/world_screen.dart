@@ -18,8 +18,9 @@ class WorldScreen extends StatelessWidget {
   ) async {
     final WordProvider wordProvider = context.read<WordProvider>();
     final PushProvider pushProvider = context.read<PushProvider>();
-    final int intervalMinutes =
-        context.read<SettingsProvider>().intervalMinutes;
+    final int intervalMinutes = context
+        .read<SettingsProvider>()
+        .intervalMinutes;
 
     switch (action) {
       case WordMenuAction.addForPush:
@@ -27,8 +28,8 @@ class WorldScreen extends StatelessWidget {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                  content:
-                      Text('"${word.word}" is already in push list.')),
+                content: Text('"${word.word}" is already in push list.'),
+              ),
             );
           }
           return;
@@ -83,8 +84,8 @@ class WorldScreen extends StatelessWidget {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content:
-                      Text('Could not update word. Please try again.')),
+                content: Text('Could not update word. Please try again.'),
+              ),
             );
           }
         }
@@ -118,8 +119,8 @@ class WorldScreen extends StatelessWidget {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                  content:
-                      Text('Could not delete word. Please try again.')),
+                content: Text('Could not delete word. Please try again.'),
+              ),
             );
           }
         }
@@ -130,20 +131,21 @@ class WorldScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final WordProvider wordProvider = context.watch<WordProvider>();
-
-    if (wordProvider.isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    final bool showStatusRow = wordProvider.words.isEmpty;
+    final bool showLoadingFooter = wordProvider.isLoading && !showStatusRow;
+    final int itemCount =
+        1 +
+        (showStatusRow ? 1 : wordProvider.words.length) +
+        (showLoadingFooter ? 1 : 0);
 
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
-      itemCount: wordProvider.words.length + 1,
+      itemCount: itemCount,
       separatorBuilder: (BuildContext context, int index) {
         if (index == 0) {
           return const SizedBox(height: 22);
         }
-        return const Divider(
-            height: 1, thickness: 1, color: Color(0xFFC5CCD5));
+        return const Divider(height: 1, thickness: 1, color: Color(0xFFC5CCD5));
       },
       itemBuilder: (BuildContext context, int index) {
         if (index == 0) {
@@ -161,10 +163,61 @@ class WorldScreen extends StatelessWidget {
                 border: InputBorder.none,
                 icon: Icon(Icons.search, color: Color(0xFF8E98A7), size: 22),
                 hintText: 'Search',
-                hintStyle:
-                    TextStyle(color: Color(0xFF8E98A7), fontSize: 27 / 2),
+                hintStyle: TextStyle(
+                  color: Color(0xFF8E98A7),
+                  fontSize: 27 / 2,
+                ),
               ),
             ),
+          );
+        }
+
+        if (showStatusRow) {
+          if (wordProvider.isLoading) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          if (wordProvider.loadError != null) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    wordProvider.loadError!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF3B4957),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: context.read<WordProvider>().retryFetch,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24, horizontal: 12),
+            child: Text(
+              'No words found.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: Color(0xFF3B4957)),
+            ),
+          );
+        }
+
+        if (showLoadingFooter && index == wordProvider.words.length + 1) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
           );
         }
 

@@ -49,6 +49,7 @@ dependencies:
   firebase_core: ^3.13.0
   firebase_auth: ^5.5.3
   google_sign_in: ^6.2.1
+  google_sign_in_ios: 5.8.1
   sign_in_with_apple: ^6.1.1
   crypto: ^3.0.6
   permission_handler: ^11.3.1
@@ -69,6 +70,8 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  config:
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
@@ -80,6 +83,7 @@ flutter:
     - assets/data/EV/anhviet109K.dict
     - assets/data/EV/anhviet109K.index
     - assets/data/EV/anhviet109K.ini
+    - assets/audio/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -106,5 +110,3 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
-
-
